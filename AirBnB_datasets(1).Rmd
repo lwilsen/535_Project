@@ -101,35 +101,10 @@ price_change_dataset %>%
 ggplot(price_change_dataset) +
   aes(x = neighbourhood_group_cleansed, y = price_change, color = neighbourhood_group_cleansed) +
   geom_jitter() +
-  theme(legend.position = "none")
-
-##CHECKING FOR NORMALITY (although the sample size is large, so prob unnecessary)
-library(EnvStats)
-par(mfrow = c(1, 2)) # combine plots
-
-res_aov <- aov(price_change ~ neighbourhood_group_cleansed, data = price_change_dataset)
-
-# histogram
-hist(res_aov$residuals)
-
-# QQ-plot
-library(EnvStats)
-qqPlot(res_aov$residuals,
-  id = FALSE # id = FALSE to remove point identification
-)
-#The residuals aren't skewed but they have really heavy tails
-
-#CHECKING FOR EQUALITY OF VARIANCES
-boxplot(price_change ~ neighbourhood_group_cleansed,
-  data = price_change_dataset
-)
-
-library(car)
-leveneTest(price_change  ~ neighbourhood_group_cleansed,
-            data = price_change_dataset
- ) #statistically significant result, but the sample size is large
-
-plot(res_aov, which = 3)
+  theme(legend.position = "none") +
+  labs(x="Borough", y = "Pre-LL18 to Post LL18 Change in Price") +
+  theme_classic() +
+  scale_y_continuous(limits = c(-500,500), breaks = seq(-500,500,100))
 
 
 #Actual ANOVA - if we don't assume there are equal variances
@@ -139,7 +114,6 @@ res_aov_og <- oneway.test(price_change ~ neighbourhood_group_cleansed,
 ) #Conclusion: "marginally significant"
 
 F_stats <- NULL
-p_vals <- NULL
 for(i in 1:5000){
    bootstrap_sample_idx <- sample(nrow(price_change_dataset), 
                                   replace = TRUE)
@@ -149,18 +123,47 @@ for(i in 1:5000){
       var.equal = FALSE # assuming equal variances
     )
    F_stats <- c(F_stats, res_aov$statistic)
-   p_vals <- c(p_vals, res_aov$p.value)
-   
-}
-quantile(p_vals, c(0.025, 0.975))
-mean(p_vals)
-median(p_vals)
 
-hist(F_stats, breaks = 20)
+}
+
+hist(F_stats, breaks = 20, prob=T)
 abline(v=res_aov_og$statistic, col = "red")
 
 sum(F_stats>=res_aov_og$statistic)/length(F_stats) 
 #Conclusion: not at all statistically significant
+
+#probability of surviving regression
+surv_reg_data <- joined_prices %>% 
+  filter(!is.na(price_2023)) %>%
+  mutate(survived = ifelse(is.na(price_2024), 0, 1)) %>% 
+  left_join(filtered_nyc_2023) %>%
+  mutate(neighbourhood_group = factor(neighbourhood_group, c("Manhattan", "Bronx", "Brooklyn", "Queens", "Staten Island")))
+
+m1 <- glm(survived ~ neighbourhood_group + price_2023  ,
+  data = surv_reg_data,
+  family = "binomial"
+)
+
+logit2prob <- function(logit){
+  odds <- exp(logit)
+  prob <- odds / (1 + odds)
+  return(prob)
+}
+
+summary(m1)
+
+mydata <- data.frame(res = c(residuals(m1, type = "deviance")),
+           pred = logit2prob(predict(m1)))
+
+ggplot(mydata, aes(x=pred, y=res))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() +
+  labs(x = "Predicted Value", y="Deviance Residual")
+
+exp(m1$coefficients)
+
+vif(model)
 
 ```
 
