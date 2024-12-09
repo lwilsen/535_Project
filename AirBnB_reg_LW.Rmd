@@ -9,13 +9,16 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## 
+# Load in and process 2024 Datase4t
 
 ```{r}
 library(tidyverse)
 library(skimr)
+library(stringr)
+library(GGally)
 
 nyc_2024 <- read.csv("nyc_mar2024.csv")
+
 
 nyc_2024 <- nyc_2024 %>%
   select(id, name, host_id, host_name, neighborhood_overview, neighbourhood_cleansed, neighbourhood_group_cleansed,latitude, longitude, room_type, price, last_scraped, last_review, minimum_nights, number_of_reviews, last_review, reviews_per_month, reviews_per_month, calculated_host_listings_count, availability_365, number_of_reviews_ltm, license, host_location, host_since, host_neighbourhood, host_listings_count, host_total_listings_count,  number_of_reviews_l30d )
@@ -24,14 +27,172 @@ head(nyc_2024)
 filtered_nyc_2024 <- nyc_2024 %>%
   mutate(last_review_date = as.Date(last_review)) %>%
   filter(last_review_date >= max(last_review_date, na.rm = T) %m-% months(6) )
-filtered_nyc_2024$price = as.numeric(filtered_nyc_2024$price)
 #
 filtered_nyc_2024 %>% select(last_review_date) %>% summary()
 
-
-
-dim(nyc_2023)
-filtered_nyc_2024$price
+head(filtered_nyc_2024$price)
 ```
 
+## Price to Numeric
+
+```{r}
+filtered_nyc_2024$price <- (gsub("\\$", "", filtered_nyc_2024$price))
+filtered_nyc_2024$price <- (gsub(",", "", filtered_nyc_2024$price))
+
+
+filtered_nyc_2024$price = ifelse(filtered_nyc_2024$price == "", 0.00, filtered_nyc_2024$price)
+
+filtered_nyc_2024$price = as.numeric(filtered_nyc_2024$price)
+
+reg_df_2024 = filtered_nyc_2024 %>% select(room_type, price, minimum_nights, number_of_reviews, 
+                                           reviews_per_month, calculated_host_listings_count,
+                                           availability_365)
+```
+
+## One hot room type
+
+```{r}
+reg_df_2024 = reg_df_2024 %>% mutate(entire = ifelse(room_type == "Entire home/apt",1,0),
+                                     private = ifelse(room_type == "Private room",1,0),
+                                     shared = ifelse(room_type == "Shared room",1,0),
+                                     hotel = ifelse(room_type == "Hotel room",1,0))
+reg_df_2024$room_type = NULL
+```
+
+
+# Load in and process 2023 dataset
+
+```{r}
+nyc_2023 <- read.csv("nyc_2023.csv")
+
+filtered_nyc_2023 <- nyc_2023 %>%
+  mutate(last_review_date = as.Date(last_review)) %>%
+  filter(last_review_date >= max(last_review_date, na.rm = T) %m-% months(6) )
+
+filtered_nyc_2023$price = as.numeric(filtered_nyc_2023$price)
+
+reg_df_2023 = filtered_nyc_2023 %>% select(room_type, price, minimum_nights, number_of_reviews, 
+                                           reviews_per_month, calculated_host_listings_count,
+                                           availability_365)
+```
+
+## One hot room type
+
+```{r}
+reg_df_2023 = reg_df_2023 %>% mutate(entire = ifelse(room_type == "Entire home/apt",1,0),
+                                     private = ifelse(room_type == "Private room",1,0),
+                                     shared = ifelse(room_type == "Shared room",1,0),
+                                     hotel = ifelse(room_type == "Hotel room",1,0))
+reg_df_2023$room_type = NULL
+```
+
+
+# Exploration
+## Heatmaps
+### 2024
+
+```{r}
+cor_matrix_2024 <- cor(reg_df_2024)
+
+# Generate the heatmap
+heatmap(cor_matrix_2024, 
+        col = colorRampPalette(c("blue", "white", "red"))(50), 
+        scale = "none", 
+        main = "Heatmap of Correlations")
+```
+
+So that's not super helpful.
+
+### 2023
+
+```{r}
+cor_matrix_2023 <- cor(reg_df_2023)
+
+# Generate the heatmap
+heatmap(cor_matrix_2023, 
+        col = colorRampPalette(c("blue", "white", "red"))(50), 
+        scale = "none", 
+        main = "Heatmap of Correlations")
+```
+
+Again, no strong correlations
+
+# Regression
+
+## Model 1 2024
+```{r}
+model_1_2024 = lm(price ~ ., data = reg_df_2024)
+```
+
+### Mod1 summary
+```{r}
+summary(model_1_2024)
+```
+
+### Stepwise selection
+```{r}
+stepwise_model_2024 <- step(model_1_2024, direction = "both")
+```
+#### stepwise2024 summary
+```{r}
+summary(stepwise_model_2024)
+```
+
+## Model 1 2023
+```{r}
+model_1_2023 = lm(price ~ ., data = reg_df_2023)
+```
+
+### Mod12023 summary
+```{r}
+summary(model_1_2023)
+```
+
+### Stepwise selection
+```{r}
+stepwise_model_2023 <- step(model_1_2023, direction = "both")
+```
+
+#### stepwise2023 summary
+```{r}
+summary(stepwise_model_2023)
+```
+
+## Model 2 2024
+Dropping price outliers for this model
+```{r}
+reg_min_df_2024 = reg_df_2024 %>% filter(price <= 250000)
+
+model_2_2024 = lm(price ~ ., data = reg_min_df_2024)
+```
+
+### Mod2 summary
+```{r}
+summary(model_2_2024)
+```
+
+### Stepwise
+```{r}
+stepwise_model2_2024 <- step(model_2_2024, direction = "both")
+summary(stepwise_model2_2024)
+```
+
+## Model 2 2023
+
+```{r}
+reg_min_df_2023 = reg_df_2023 %>% filter(price <= 250000)
+
+model_2_2023 = lm(price ~ ., data = reg_min_df_2023)
+```
+
+### Mod2 summary
+```{r}
+summary(model_2_2024)
+```
+
+### Stepwise
+```{r}
+stepwise_model2_2023 <- step(model_2_2023, direction = "both")
+summary(stepwise_model2_2023)
+```
 
