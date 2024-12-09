@@ -12,155 +12,26 @@ knitr::opts_chunk$set(echo = TRUE)
 ## 
 
 ```{r}
-#import the dataset for 2024
 library(tidyverse)
+library(skimr)
 
-#KF - I switched this to the March 2024 archive dataset
 nyc_2024 <- read.csv("nyc_mar2024.csv")
 
-# these are all the variables that seemed at all related to variables in the kaggle dataset
 nyc_2024 <- nyc_2024 %>%
   select(id, name, host_id, host_name, neighborhood_overview, neighbourhood_cleansed, neighbourhood_group_cleansed,latitude, longitude, room_type, price, last_scraped, last_review, minimum_nights, number_of_reviews, last_review, reviews_per_month, reviews_per_month, calculated_host_listings_count, availability_365, number_of_reviews_ltm, license, host_location, host_since, host_neighbourhood, host_listings_count, host_total_listings_count,  number_of_reviews_l30d )
 head(nyc_2024)
 
-#39,319 total listings
-dim(nyc_2024)
-
-## Kayla's suggestion for "NEW" data ##
-
-#has reviews in the last 6 months
 filtered_nyc_2024 <- nyc_2024 %>%
-  mutate(last_review_date = as.Date(last_review) ) %>%
+  mutate(last_review_date = as.Date(last_review)) %>%
   filter(last_review_date >= max(last_review_date, na.rm = T) %m-% months(6) )
-#Confirm that this dataset covers listings with reviews between 9/7/2023 and 3/7/2024
-#This is six months after the law came into effect and can cover the same time period as the 2023 Kaggle data
+filtered_nyc_2024$price = as.numeric(filtered_nyc_2024$price)
+#
 filtered_nyc_2024 %>% select(last_review_date) %>% summary()
 
 
 
-## Kaggle dataset. 
-# a lot of these last reviews are super old. apparently 78% leave reviews, according to airbnb, so seems reasonable to filter to last reviews (to see what listings were still active in 2023)
-
-## maybe see how much these two datasets really match up?
-
-# this dataset has 42,931 entries,  Most recent reviews are 2023-03-06. This is NOT a year ago. i.e. this is from a couple of months into the implementation of the law. 
-#[[KF - Doesn't this end a before the law starts?]]
-nyc_2023 <- read.csv("nyc_2023.csv")
 dim(nyc_2023)
-
-## "OLD" data ##
-#entries with reviews in the last 6 months. 18,993 listings. so from 2022-09-06 to 2023-03-06
-filtered_nyc_2023 <- nyc_2023 %>%
-  mutate(last_review_date = as.Date(last_review) ) %>%
-  filter(last_review_date >= max(last_review_date, na.rm = T) %m-% months(6) )
-filtered_nyc_2023 %>% select(last_review_date) %>% summary()
-
-dim(filtered_nyc_2023)
-
-  
-#looking at oldest reviews: oldest last review 2011-05-12  
-filter(nyc_2023, last_review != "") %>%
-  arrange(last_review) %>% head()
-#KF - this is also true of the 2024 dataset though... My guess is that ever snapshot on inside AirBnB pulls data for any active listing even if they haven't been booked in over a decade
-filter(nyc_2024, last_review != "") %>%
-  arrange(last_review) %>% select(last_review) %>% head()
-
-
-#ideas: figure out which are the same listings. either through ID or hostID?
-## KF - I would suggest using a full join to do this 
-joined_prices <- filtered_nyc_2023 %>% select(id, price_2023 = price) %>%
-  mutate(in_2023 = 1) %>%
-  full_join(filtered_nyc_2024 %>% select(id,neighbourhood_group_cleansed, price_2024 = price) %>%
-              mutate(in_2024 = 1))
-
-#Using the "id" variable to join the two datasets, there are
-#     7,047 listings in both 2023 and 2024
-#     11,946 listings that are only in 2023
-#     4,731 listings that are only in 2024
-#(Note that I am still referring to the datasets by year, but they should probably be called pre/post-law?)
-joined_prices %>% count(in_2023, in_2024)
-
-#KF - Going through with my idea of running an anova on listings that appear in both 2023 and 2024
-price_change_dataset <- joined_prices %>% 
-  filter(in_2023 == 1 & in_2024 == 1) %>% 
-  mutate(price_2024 = as.numeric(str_remove(price_2024, "\\$"))) %>%
-  mutate(price_change = price_2024 - price_2023) %>%
-  filter(!is.na(price_change) &
-           price_change < 500 & price_change > -500) #THINK ABOUT WHAT TO DO ABOUT OUTLIERS 
-
-price_change_dataset%>% 
-  nrow() #end up with 6386 rows with prices in both 2023 and 2024
-price_change_dataset %>% 
-  count(neighbourhood_group_cleansed) #fewer observations in the Bronx and Staten Island
-
-ggplot(price_change_dataset) +
-  aes(x = neighbourhood_group_cleansed, y = price_change, color = neighbourhood_group_cleansed) +
-  geom_jitter() +
-  theme(legend.position = "none")
-
-##CHECKING FOR NORMALITY (although the sample size is large, so prob unnecessary)
-library(EnvStats)
-par(mfrow = c(1, 2)) # combine plots
-
-# histogram
-hist(res_aov$residuals)
-
-# QQ-plot
-qqPlot(res_aov$residuals,
-  id = FALSE # id = FALSE to remove point identification
-)
-#The residuals aren't skewed but they have really heavy tails
-
-#CHECKING FOR EQUALITY OF VARIANCES
-boxplot(price_change ~ neighbourhood_group_cleansed,
-  data = price_change_dataset
-)
-
-leveneTest(price_change  ~ neighbourhood_group_cleansed,
-            data = price_change_dataset
- ) #statistically significant result, but the sample size is large
-
-plot(res_aov, which = 3)
-
-
-#Actual ANOVA - if we don't assume there are equal variances
-res_aov_og <- oneway.test(price_change ~ neighbourhood_group_cleansed,
-  data = price_change_dataset,
-  var.equal = FALSE # assuming equal variances
-) #Conclusion: "marginally significant"
-
-F_stats <- NULL
-p_vals <- NULL
-for(i in 1:5000){
-   bootstrap_sample_idx <- sample(nrow(price_change_dataset), 
-                                  replace = TRUE)
-   bstp <- price_change_dataset[bootstrap_sample_idx, ]
-   res_aov <- oneway.test(price_change ~ neighbourhood_group_cleansed,
-      data = bstp,
-      var.equal = FALSE # assuming equal variances
-    )
-   F_stats <- c(F_stats, res_aov$statistic)
-   p_vals <- c(p_vals, res_aov$p.value)
-   
-}
-quantile(p_vals, c(0.025, 0.975))
-mean(p_vals)
-median(p_vals)
-
-hist(F_stats, breaks = 20)
-abline(v=res_aov_og$statistic, col = "red")
-
-sum(F_stats>=res_aov_og$statistic)/length(F_stats) 
-#Conclusion: not at all statistically significant
-
+filtered_nyc_2024$price
 ```
 
-
-
-```{r}
-#look at dataset from 2023
-
-# look at last reviews for 
-
-```
 
