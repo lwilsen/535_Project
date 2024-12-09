@@ -14,6 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 #import the dataset for 2024
 library(tidyverse)
+library(car)
 
 #KF - I switched this to the March 2024 archive dataset
 nyc_2024 <- read.csv("nyc_mar2024.csv")
