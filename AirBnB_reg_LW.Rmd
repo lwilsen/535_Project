@@ -196,3 +196,70 @@ stepwise_model2_2023 <- step(model_2_2023, direction = "both")
 summary(stepwise_model2_2023)
 ```
 
+# Notes So Far
+
+It seems like the predictability of the models is better for 2023, with many of the 2023 significant variables in 2023, becoming insignificant in 2024
+
+# Residual Checking
+## Model 1 2024
+```{r}
+res_1_2024 = residuals(model_1_2024)
+for (i in c(1:5)){
+  plot(model_1_2024, which = i)
+}
+```
+
+## Model 1 2024 step
+```{r}
+for (i in c(1:5)){
+  plot(stepwise_model_2024, which = i)
+}
+```
+
+## Model 2 2024
+```{r}
+for (i in c(1:5)){
+  plot(model_2_2024, which = i)
+}
+```
+
+## Model 2 2024 step
+```{r}
+for (i in c(1:5)){
+  plot(stepwise_model2_2024, which = i)
+}
+```
+
+## Model 1 2023
+```{r}
+for (i in c(1:5)){
+  plot(model_1_2023, which = i)
+}
+```
+
+## Model 1 2023 step
+```{r}
+for (i in c(1:5)){
+  plot(stepwise_model_2023, which = i)
+}
+```
+
+## Model 2 2023
+```{r}
+for (i in c(1:5)){
+  plot(model_2_2023, which = i)
+}
+```
+
+## Model 2 2023 step
+```{r}
+for (i in c(1:5)){
+  plot(stepwise_model2_2023, which = i)
+}
+```
+
+
+```{r}
+min(fitted(model_1_2023))
+```
+
