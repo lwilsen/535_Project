@@ -294,15 +294,35 @@ summary(stepwise_model3_2024)
 ```{r}
 reg_m4_df_2024 = reg_fin_df_2024 %>% 
   filter(price > quantile(reg_fin_df_2024$price, 0.01),
-         price < quantile(reg_fin_df_2024$price, 0.99))
+         price < quantile(reg_fin_df_2024$price, 0.99),
+         availability_365 < 365)
 
 reg_m4_df_2024$log_price = NULL
 reg_m4_df_2024$sqrt_price = NULL
+reg_m4_df_2024$fitted = NULL
+reg_m4_df_2024$residual = NULL
 
-model_4_2024 = glm(price ~ ., data = reg_m4_df_2024)
+
+model_4_2024 = glm(log(price) ~ ., data = reg_m4_df_2024)
 
 summary(model_4_2024)
 ```
 
+```{r}
+for (i in c(1:5)){
+  plot(model_4_2024, which = i)
+}
+```
+
+```{r}
+stepwise_model4_2024 <- step(model_4_2024, direction = "both")
+summary(stepwise_model4_2024)
+```
+
+```{r}
+for (i in c(1:5)){
+  plot(stepwise_model4_2024, which = i)
+}
+```
 
 
