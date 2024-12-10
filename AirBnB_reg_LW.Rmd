@@ -44,9 +44,8 @@ filtered_nyc_2024$price = ifelse(filtered_nyc_2024$price == "", 0.00, filtered_n
 
 filtered_nyc_2024$price = as.numeric(filtered_nyc_2024$price)
 
-reg_df_2024 = filtered_nyc_2024 %>% select(room_type, price, minimum_nights, number_of_reviews, 
-                                           reviews_per_month, calculated_host_listings_count,
-                                           availability_365)
+reg_df_2024 = filtered_nyc_2024 %>% select(room_type, price, minimum_nights, number_of_reviews, reviews_per_month, calculated_host_listings_count, availability_365,
+                                           neighbourhood_group_cleansed)
 ```
 
 ## One hot room type
@@ -54,8 +53,7 @@ reg_df_2024 = filtered_nyc_2024 %>% select(room_type, price, minimum_nights, num
 ```{r}
 reg_df_2024 = reg_df_2024 %>% mutate(entire = ifelse(room_type == "Entire home/apt",1,0),
                                      private = ifelse(room_type == "Private room",1,0),
-                                     shared = ifelse(room_type == "Shared room",1,0),
-                                     hotel = ifelse(room_type == "Hotel room",1,0))
+                                     shared = ifelse(room_type == "Shared room",1,0))
 reg_df_2024$room_type = NULL
 ```
 
@@ -73,7 +71,7 @@ filtered_nyc_2023$price = as.numeric(filtered_nyc_2023$price)
 
 reg_df_2023 = filtered_nyc_2023 %>% select(room_type, price, minimum_nights, number_of_reviews, 
                                            reviews_per_month, calculated_host_listings_count,
-                                           availability_365)
+                                           availability_365, neighbourhood_group)
 ```
 
 ## One hot room type
@@ -81,8 +79,7 @@ reg_df_2023 = filtered_nyc_2023 %>% select(room_type, price, minimum_nights, num
 ```{r}
 reg_df_2023 = reg_df_2023 %>% mutate(entire = ifelse(room_type == "Entire home/apt",1,0),
                                      private = ifelse(room_type == "Private room",1,0),
-                                     shared = ifelse(room_type == "Shared room",1,0),
-                                     hotel = ifelse(room_type == "Hotel room",1,0))
+                                     shared = ifelse(room_type == "Shared room",1,0))
 reg_df_2023$room_type = NULL
 ```
 
@@ -92,13 +89,13 @@ reg_df_2023$room_type = NULL
 ### 2024
 
 ```{r}
-cor_matrix_2024 <- cor(reg_df_2024)
+#cor_matrix_2024 <- cor(reg_df_2024)
 
 # Generate the heatmap
-heatmap(cor_matrix_2024, 
-        col = colorRampPalette(c("blue", "white", "red"))(50), 
-        scale = "none", 
-        main = "Heatmap of Correlations")
+#heatmap(cor_matrix_2024, 
+#        col = colorRampPalette(c("blue", "white", "red"))(50), 
+#        scale = "none", 
+#        main = "Heatmap of Correlations")
 ```
 
 So that's not super helpful.
@@ -106,13 +103,13 @@ So that's not super helpful.
 ### 2023
 
 ```{r}
-cor_matrix_2023 <- cor(reg_df_2023)
+#cor_matrix_2023 <- cor(reg_df_2023)
 
 # Generate the heatmap
-heatmap(cor_matrix_2023, 
-        col = colorRampPalette(c("blue", "white", "red"))(50), 
-        scale = "none", 
-        main = "Heatmap of Correlations")
+#heatmap(cor_matrix_2023, 
+#        col = colorRampPalette(c("blue", "white", "red"))(50), 
+#        scale = "none", 
+#        main = "Heatmap of Correlations")
 ```
 
 Again, no strong correlations
@@ -161,7 +158,7 @@ summary(stepwise_model_2023)
 ## Model 2 2024
 Dropping price outliers for this model
 ```{r}
-reg_min_df_2024 = reg_df_2024 %>% filter(price <= 250000)
+reg_min_df_2024 = reg_df_2024 %>% filter(price <= 85000)
 
 model_2_2024 = lm(price ~ ., data = reg_min_df_2024)
 ```
@@ -180,7 +177,7 @@ summary(stepwise_model2_2024)
 ## Model 2 2023
 
 ```{r}
-reg_min_df_2023 = reg_df_2023 %>% filter(price <= 250000)
+reg_min_df_2023 = reg_df_2023 %>% filter(price <= 85000)
 
 model_2_2023 = lm(price ~ ., data = reg_min_df_2023)
 ```
@@ -262,4 +259,50 @@ for (i in c(1:5)){
 ```{r}
 min(fitted(model_1_2023))
 ```
+
+# Model 3
+
+```{r}
+reg_fin_df_2024 = reg_min_df_2024 %>% 
+  filter(price > 0)
+
+model_3_2024 = glm(price ~ ., data = reg_fin_df_2024)
+
+summary(model_3_2024)
+```
+
+```{r}
+for (i in c(1:5)){
+  plot(model_3_2024, which = i)
+}
+```
+
+```{r}
+reg_fin_df_2024$fitted = fitted(model_3_2024)
+reg_fin_df_2024$residual = residuals(model_3_2024)
+```
+
+```{r}
+stepwise_model3_2024 <- step(model_3_2024, direction = "both")
+summary(stepwise_model3_2024)
+```
+
+
+
+# Model 4
+
+```{r}
+reg_m4_df_2024 = reg_fin_df_2024 %>% 
+  filter(price > quantile(reg_fin_df_2024$price, 0.01),
+         price < quantile(reg_fin_df_2024$price, 0.99))
+
+reg_m4_df_2024$log_price = NULL
+reg_m4_df_2024$sqrt_price = NULL
+
+model_4_2024 = glm(price ~ ., data = reg_m4_df_2024)
+
+summary(model_4_2024)
+```
+
+
 
