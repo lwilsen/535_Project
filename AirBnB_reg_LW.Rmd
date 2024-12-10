@@ -325,4 +325,68 @@ for (i in c(1:5)){
 }
 ```
 
+## 2023 Model 4
+
+```{r}
+reg_m4_df_2023 =  reg_min_df_2023 %>% 
+  filter(price > quantile(reg_min_df_2023$price, 0.01),
+         price < quantile(reg_min_df_2023$price, 0.99),
+         availability_365 < 365)
+
+
+model_4_2023 = glm(log(price) ~ ., data = reg_m4_df_2023)
+
+summary(model_4_2024)
+```
+
+```{r}
+for (i in c(1:5)){
+  plot(model_4_2023, which = i)
+}
+```
+
+```{r}
+stepwise_model4_2023 <- step(model_4_2023, direction = "both")
+```
+
+```{r}
+for (i in c(1:5)){
+  plot(stepwise_model4_2023, which = i)
+}
+```
+
+```{r}
+summary(stepwise_model4_2023)
+summary(stepwise_model4_2024)
+```
+
+# Model 4 model comparisons
+```{r}
+
+coefs_2024 = data.frame(
+  estimates_2024 = coef(stepwise_model4_2024),
+  se_2024 = summary(stepwise_model4_2024)$coefficients[, 2]
+)
+
+coefs_2023 = data.frame(
+  estimates_2023 = coef(stepwise_model4_2023),
+  se_2023 = summary(stepwise_model4_2023)$coefficients[, 2]
+)
+
+
+coefficients_df_long <- pivot_longer(coefficients_df, 
+                                     cols = c(Model1, Model2), 
+                                     names_to = "Model", 
+                                     values_to = "Estimate")
+
+# Plot
+ggplot(coefficients_df_long, aes(x = Variable, y = Estimate, fill = Model)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Comparison of Coefficient Estimates",
+       x = "Variables", y = "Estimate")
+```
+
+
 
