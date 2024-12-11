@@ -26,7 +26,8 @@ head(nyc_2024)
 
 filtered_nyc_2024 <- nyc_2024 %>%
   mutate(last_review_date = as.Date(last_review)) %>%
-  filter(last_review_date >= max(last_review_date, na.rm = T) %m-% months(6) )
+  filter(last_review_date >= max(last_review_date, na.rm = T) %m-% months(6) ) %>% 
+  rename(neighbourhood_group = neighbourhood_group_cleansed)
 #
 filtered_nyc_2024 %>% select(last_review_date) %>% summary()
 
@@ -45,7 +46,7 @@ filtered_nyc_2024$price = ifelse(filtered_nyc_2024$price == "", 0.00, filtered_n
 filtered_nyc_2024$price = as.numeric(filtered_nyc_2024$price)
 
 reg_df_2024 = filtered_nyc_2024 %>% select(room_type, price, minimum_nights, number_of_reviews, reviews_per_month, calculated_host_listings_count, availability_365,
-                                           neighbourhood_group_cleansed)
+                                           neighbourhood_group)
 ```
 
 ## One hot room type
@@ -360,33 +361,97 @@ summary(stepwise_model4_2023)
 summary(stepwise_model4_2024)
 ```
 
-# Model 4 model comparisons
+# Model 4 coeff comparisons
 ```{r}
 
 coefs_2024 = data.frame(
-  estimates_2024 = coef(stepwise_model4_2024),
-  se_2024 = summary(stepwise_model4_2024)$coefficients[, 2]
+  estimates_2024 = format(round(coef(stepwise_model4_2024), 4), scientific = FALSE),
+  se_2024 = format(round(summary(stepwise_model4_2024)$coefficients[, 2], 4), scientific = FALSE),
+  P_2024 = summary(stepwise_model4_2024)$coefficients[,4]
 )
+
+avail_365_row = c("Not significant") #recycles for every column
+
+coefs_2024 = rbind(coefs_2024[1:5,],
+                    avail_365_row,
+                    coefs_2024[6:nrow(coefs_2024),]
+                  )
+
+rownames(coefs_2024)[6] = "availability_365"
 
 coefs_2023 = data.frame(
-  estimates_2023 = coef(stepwise_model4_2023),
-  se_2023 = summary(stepwise_model4_2023)$coefficients[, 2]
+  estimates_2023 = round(coef(stepwise_model4_2023), 4),
+  se_2023 = round(summary(stepwise_model4_2023)$coefficients[, 2],4),
+  P_2023 = summary(stepwise_model4_2023)$coefficients[,4]
 )
 
+coef_compare = cbind(coefs_2023, coefs_2024) %>% rownames_to_column(var = "Variable")
+print(coef_compare)
+```
 
-coefficients_df_long <- pivot_longer(coefficients_df, 
-                                     cols = c(Model1, Model2), 
-                                     names_to = "Model", 
-                                     values_to = "Estimate")
+```{r}
+coef_wider = coef_compare %>% 
+  filter(abs(estimates_2023) > 0.001) %>% 
+  mutate(estimates_2024 = as.numeric(estimates_2024),
+         se_2024 = as.numeric(se_2024),
+         P_2024 = as.numeric(P_2024)) %>% 
+  pivot_longer(cols = c(starts_with("estimates"), 
+                        starts_with("se"), 
+                        starts_with("P")),
+                              names_to = c("Metric", "Year"),
+               names_sep = "_",
+                              values_to = "Value")%>%
+  pivot_wider(
+    names_from = Metric,
+    values_from = Value
+  )
 
-# Plot
-ggplot(coefficients_df_long, aes(x = Variable, y = Estimate, fill = Model)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  theme_minimal() +
-  coord_flip() +
-  labs(title = "Comparison of Coefficient Estimates",
-       x = "Variables", y = "Estimate")
+z_value <- 1.96  # Z-value for 95% CI
+coef_wider <- coef_wider %>%
+  mutate(
+    CI_lower = estimates - z_value * se,
+    CI_upper = estimates + z_value * se,
+    Variable = ifelse(Variable == "neighbourhood_groupBrooklyn", "ng_Brooklyn",
+                      ifelse(Variable == "neighbourhood_groupManhattan", "ng_Manhattan",
+                             ifelse(Variable == "neighbourhood_groupQueens", "ng_Queens",
+                                    ifelse(Variable == "neighbourhood_groupStaten Island", "ng_Staten Island", Variable))))
+  )
 ```
 
 
+```{r}
+coef_wider %>% 
+  filter(Variable != "(Intercept)") %>% 
+  ggplot(aes(x = Variable, y = estimates, color = Year, group = Year)) +
+  geom_point(size = 1) +  # Points for the estimates
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.2) +  # Error bars for confidence intervals
+  theme_minimal() +
+  labs(
+    title = "95% Confidence Intervals for Estimates by Year and Variable",
+    x = "Variable",
+    y = "Estimate",
+    color = "Year"
+  )+
+  theme(axis.text.x = element_text(angle = 45, vjust = , hjust=1))
+```
+
+
+```{r}
+coef_wider %>% 
+  filter(Variable == "(Intercept)") %>% 
+  ggplot(aes(y = Variable, x = estimates, color = Year, group = Year)) +
+  geom_point(size = 4) +  # Points for the estimates
+  geom_errorbar(aes(xmin = CI_lower, xmax = CI_upper), width = 0.2) +  # Error bars for confidence intervals
+  theme_minimal() +
+  labs(
+    title = "95% Confidence Intervals for Estimates by Year and Variable",
+    x = "Variable",
+    y = "Estimate",
+    color = "Year"
+  )
+
+```
+
+
+!!!STILL NEED TO EXPONENTIATE THESE ESTIMATES!!!
 
