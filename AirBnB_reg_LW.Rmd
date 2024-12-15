@@ -288,6 +288,39 @@ stepwise_model3_2024 <- step(model_3_2024, direction = "both")
 summary(stepwise_model3_2024)
 ```
 
+# Load Clean Dfs:
+
+```{r}
+clean_post = read_csv("/Users/lukewilsen/Desktop/School/Stat_535/535_Project/clean_post.csv")
+clean_post = clean_post %>% 
+  select(room_type, price, minimum_nights, number_of_reviews, reviews_per_month,
+         calculated_host_listings_count, availability_365,neighbourhood_group_cleansed) %>% 
+  rename(neighbourhood_group = neighbourhood_group_cleansed) %>% 
+  mutate(entire = ifelse(room_type == "Entire home/apt",1,0),
+                                     private = ifelse(room_type == "Private room",1,0),
+                                     shared = ifelse(room_type == "Shared room",1,0))
+
+clean_post$room_type = NULL
+clean_post$price <- (gsub("\\$", "", clean_post$price))
+clean_post$price <- (gsub(",", "", clean_post$price))
+
+
+clean_post$price = ifelse(clean_post$price == "", 0.00, clean_post$price)
+
+clean_post$price = as.numeric(clean_post$price)
+
+clean_pre = read_csv("/Users/lukewilsen/Desktop/School/Stat_535/535_Project/clean_pre.csv")
+clean_pre = clean_pre %>% 
+  select(room_type, price_2023, minimum_nights, number_of_reviews, reviews_per_month,
+         calculated_host_listings_count, availability_365,neighbourhood_group) %>% 
+  mutate(entire = ifelse(room_type == "Entire home/apt",1,0),
+                                     private = ifelse(room_type == "Private room",1,0),
+                                     shared = ifelse(room_type == "Shared room",1,0)) %>% 
+  rename(price = price_2023)
+
+clean_pre$room_type = NULL
+```
+
 
 
 # Model 4
@@ -295,23 +328,26 @@ summary(stepwise_model3_2024)
 ```{r}
 reg_m4_df_2024 = reg_fin_df_2024 %>% 
   filter(price > quantile(reg_fin_df_2024$price, 0.01),
-         price < quantile(reg_fin_df_2024$price, 0.99),
-         availability_365 < 365)
+         price < quantile(reg_fin_df_2024$price, 0.99))
 
 reg_m4_df_2024$log_price = NULL
 reg_m4_df_2024$sqrt_price = NULL
 reg_m4_df_2024$fitted = NULL
 reg_m4_df_2024$residual = NULL
+reg_m4_df_2024$availability_365 = NULL
 
 
 model_4_2024 = glm(log(price) ~ ., data = reg_m4_df_2024)
 
+model_4_post = glm(log(price) ~ ., data = clean_post)
+
 summary(model_4_2024)
+summary(model_4_post)
 ```
 
 ```{r}
 for (i in c(1:5)){
-  plot(model_4_2024, which = i)
+  plot(model_4_post, which = i)
 }
 ```
 
@@ -331,18 +367,20 @@ for (i in c(1:5)){
 ```{r}
 reg_m4_df_2023 =  reg_min_df_2023 %>% 
   filter(price > quantile(reg_min_df_2023$price, 0.01),
-         price < quantile(reg_min_df_2023$price, 0.99),
-         availability_365 < 365)
+         price < quantile(reg_min_df_2023$price, 0.99))
 
+reg_m4_df_2023$availability_365 = NULL
 
 model_4_2023 = glm(log(price) ~ ., data = reg_m4_df_2023)
+model_4_pre = glm(log(price) ~ ., data = clean_pre)
 
-summary(model_4_2024)
+summary(model_4_2023)
+summary(model_4_pre)
 ```
 
 ```{r}
 for (i in c(1:5)){
-  plot(model_4_2023, which = i)
+  plot(model_4_pre, which = i)
 }
 ```
 
@@ -364,37 +402,28 @@ summary(stepwise_model4_2024)
 # Model 4 coeff comparisons
 ```{r}
 
-coefs_2024 = data.frame(
-  estimates_2024 = format(round(coef(stepwise_model4_2024), 4), scientific = FALSE),
-  se_2024 = format(round(summary(stepwise_model4_2024)$coefficients[, 2], 4), scientific = FALSE),
-  P_2024 = summary(stepwise_model4_2024)$coefficients[,4]
+coefs_post = data.frame(
+  estimates_post = format(round(coef(model_4_post), 4), scientific = FALSE),
+  se_post = format(round(summary(model_4_post)$coefficients[, 2], 4), scientific = FALSE),
+  P_post = summary(model_4_post)$coefficients[,4]
 )
 
-avail_365_row = c("Not significant") #recycles for every column
 
-coefs_2024 = rbind(coefs_2024[1:5,],
-                    avail_365_row,
-                    coefs_2024[6:nrow(coefs_2024),]
-                  )
-
-rownames(coefs_2024)[6] = "availability_365"
-
-coefs_2023 = data.frame(
-  estimates_2023 = round(coef(stepwise_model4_2023), 4),
-  se_2023 = round(summary(stepwise_model4_2023)$coefficients[, 2],4),
-  P_2023 = summary(stepwise_model4_2023)$coefficients[,4]
+coefs_pre = data.frame(
+  estimates_pre = round(coef(model_4_pre), 4),
+  se_pre = round(summary(model_4_pre)$coefficients[, 2],4),
+  P_pre = summary(model_4_pre)$coefficients[,4]
 )
 
-coef_compare = cbind(coefs_2023, coefs_2024) %>% rownames_to_column(var = "Variable")
+coef_compare = cbind(coefs_pre, coefs_post) %>% rownames_to_column(var = "Variable")
 print(coef_compare)
 ```
 
 ```{r}
 coef_wider = coef_compare %>% 
-  filter(abs(estimates_2023) > 0.001) %>% 
-  mutate(estimates_2024 = as.numeric(estimates_2024),
-         se_2024 = as.numeric(se_2024),
-         P_2024 = as.numeric(P_2024)) %>% 
+  mutate(estimates_post = as.numeric(estimates_post),
+         se_post = as.numeric(se_post),
+         P_post = as.numeric(P_post)) %>% 
   pivot_longer(cols = c(starts_with("estimates"), 
                         starts_with("se"), 
                         starts_with("P")),
@@ -409,12 +438,13 @@ coef_wider = coef_compare %>%
 z_value <- 1.96  # Z-value for 95% CI
 coef_wider <- coef_wider %>%
   mutate(
-    CI_lower = estimates - z_value * se,
-    CI_upper = estimates + z_value * se,
+    CI_lower = exp(estimates) - z_value * exp(se),
+    CI_upper = exp(estimates) + z_value * exp(se),
     Variable = ifelse(Variable == "neighbourhood_groupBrooklyn", "ng_Brooklyn",
                       ifelse(Variable == "neighbourhood_groupManhattan", "ng_Manhattan",
                              ifelse(Variable == "neighbourhood_groupQueens", "ng_Queens",
-                                    ifelse(Variable == "neighbourhood_groupStaten Island", "ng_Staten Island", Variable))))
+                                    ifelse(Variable == "neighbourhood_groupStaten Island", "ng_Staten Island", Variable)))),
+    estimates_exp = exp(estimates)
   )
 ```
 
@@ -422,7 +452,7 @@ coef_wider <- coef_wider %>%
 ```{r}
 coef_wider %>% 
   filter(Variable != "(Intercept)") %>% 
-  ggplot(aes(x = Variable, y = estimates, color = Year, group = Year)) +
+  ggplot(aes(x = Variable, y = estimates_exp, color = Year, group = Year)) +
   geom_point(size = 1) +  # Points for the estimates
   geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.2) +  # Error bars for confidence intervals
   theme_minimal() +
@@ -439,7 +469,7 @@ coef_wider %>%
 ```{r}
 coef_wider %>% 
   filter(Variable == "(Intercept)") %>% 
-  ggplot(aes(y = Variable, x = estimates, color = Year, group = Year)) +
+  ggplot(aes(y = Variable, x = estimates_exp, color = Year, group = Year)) +
   geom_point(size = 4) +  # Points for the estimates
   geom_errorbar(aes(xmin = CI_lower, xmax = CI_upper), width = 0.2) +  # Error bars for confidence intervals
   theme_minimal() +
@@ -452,6 +482,238 @@ coef_wider %>%
 
 ```
 
+# Bootstrapping!
 
-!!!STILL NEED TO EXPONENTIATE THESE ESTIMATES!!!
+```{r}
+model_4_post = glm(log(price) ~ ., data = clean_post)
+model_4_pre = glm(log(price) ~ ., data = clean_pre)
+
+coefs_post = data.frame(
+  estimates_post = format(round(coef(model_4_post), 4), scientific = FALSE),
+  se_post = format(round(summary(model_4_post)$coefficients[, 2], 4), scientific = FALSE),
+  P_post = summary(model_4_post)$coefficients[,4]
+)
+
+
+coefs_pre = data.frame(
+  estimates_pre = round(coef(model_4_pre), 4),
+  se_pre = round(summary(model_4_pre)$coefficients[, 2],4),
+  P_pre = summary(model_4_pre)$coefficients[,4]
+)
+
+format(round(coef(model_4_post), 4), scientific = FALSE)
+
+list(
+  estimates_post = format(round(coef(model_4_post), 4), scientific = FALSE),
+  se_post = format(round(summary(model_4_post)$coefficients[, 2], 4), scientific = FALSE),
+  P_post = summary(model_4_post)$coefficients[,4]
+     )
+```
+
+
+```{r}
+#clean post bootstrap
+n = nrow(clean_post)
+M = 1000
+estimate_list <- vector("list", length(names(coef(model_4_post))))
+names(estimate_list) = names(coef(model_4_post))
+for (i in 1:length(estimate_list)){
+  estimate_list[[i]] = numeric(M)
+}
+
+#Bootstraps difference in estimates for the two years
+for (m in 1:M) {
+  bootstrap_sample_idx_1 <- sample(n, replace = TRUE) 
+  bootstrap_sample_idx_2 = sample(n, replace = TRUE)
+  btsp_post <- clean_post[bootstrap_sample_idx_1, ]
+  btsp_pre = clean_pre[bootstrap_sample_idx_2, ]
+  
+  post_mod = glm(log(price) ~ ., data = btsp_post)
+  pre_mod = glm(log(price) ~ ., data = btsp_pre)
+  
+  estimate_list$`(Intercept)`[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[1]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[1]]))
+  
+  estimate_list$minimum_nights[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[2]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[2]]))
+  
+  estimate_list$number_of_reviews[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[3]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[3]]))
+  
+  estimate_list$reviews_per_month[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[4]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[4]]))
+  
+  estimate_list$calculated_host_listings_count[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[5]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[5]]))
+  
+  estimate_list$availability_365[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[6]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[6]]))
+  
+  estimate_list$neighbourhood_groupBrooklyn[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[7]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[7]]))
+  
+  estimate_list$neighbourhood_groupManhattan[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[8]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[8]]))
+  
+  estimate_list$neighbourhood_groupQueens[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[9]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[9]]))
+  
+  estimate_list$`neighbourhood_groupStaten Island`[m] = (as.numeric(format(round(coef(post_mod), 4),scientific = FALSE)[[10]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[10]]))
+  
+  estimate_list$entire[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[11]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[11]]))
+  
+  estimate_list$private[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[12]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[12]]))
+  
+  estimate_list$shared[m] = (as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[13]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[13]]))
+}
+
+for (i in 1:length(estimate_list)){
+  print(
+    ggplot()+
+      geom_histogram(aes(x = estimate_list[[i]]), color = "white")+
+      geom_vline(xintercept = quantile(estimate_list[[i]], 0.025), color = "red")+
+      geom_vline(xintercept = quantile(estimate_list[[i]], 0.975), color = "red")+
+      ggtitle(names(estimate_list[i]))+
+      xlab(names(estimate_list[i]))
+    )
+}
+
+ggplot()+
+  geom_histogram(aes(x = estimate_list[[1]]))
+```
+Practically significant: Min nights, # reviews, reviews per month, neighborhood = Brooklyn, neighborhood = Manhattan, room type = private, room type = shared
+- These variables had estimated differences that were not equal to 0 at a 95% confidence level
+
+```{r}
+coef_change_sum = data.frame(variable = names(estimate_list),
+           relative_change = numeric(length(names(estimate_list))),
+           Bootstrapped_CI_L = numeric(length(names(estimate_list))),
+           Bootstrapped_CI_U = numeric(length(names(estimate_list))),
+           reject_null = character(length(names(estimate_list))))
+
+for (i in 1:length(estimate_list)){
+  cat("Variable:",names(estimate_list)[i], 
+      "\n", 
+      exp(mean(estimate_list[[i]])), "times relative change in the multiplicative effect of variable on price", "\n",
+      "Bootstrapped estimate difference CI:", c(quantile(estimate_list[[i]], 0.025),
+                                                quantile(estimate_list[[i]], 0.975)), "\n",
+      ifelse((0 > quantile(estimate_list[[i]], 0.025)) & (0 < quantile(estimate_list[[i]], 0.975)), "Fail to Reject null", "Reject Null"),"\n",
+      "Post law coefficient estimate:", (coef(model_4_post)[i]), "\n",
+      "Pre law coefficient estimate:", (coef(model_4_pre)[i]), "\n")
+  
+  coef_change_sum$variable[i] = names(estimate_list)[i]
+  coef_change_sum$relative_change[i] = exp(mean(estimate_list[[i]]))
+  coef_change_sum$Bootstrapped_CI_L[i] = quantile(estimate_list[[i]], 0.025)
+  coef_change_sum$Bootstrapped_CI_U[i] = quantile(estimate_list[[i]], 0.975)
+  coef_change_sum$reject_null[i] = ifelse((0 > quantile(estimate_list[[i]], 0.025)) & (0 < quantile(estimate_list[[i]], 0.975)), "Fail to Reject null", "Reject Null")
+
+}
+```
+
+```{r}
+coef_change_sum %>% 
+  mutate(percent_change = abs(coef_change_sum$relative_change - 1)) %>% filter(reject_null == "Reject Null" & percent_change > 0.05)
+
+coef_change_sum
+```
+
+
+
+```{r}
+ggplot() +
+  geom_histogram(aes(x = exp(estimate_list$neighbourhood_groupBrooklyn)), color = "white") +
+  geom_vline(xintercept = exp(quantile((estimate_list$neighbourhood_groupBrooklyn), 0.025)), color = "red") +
+  geom_vline(xintercept = exp(quantile((estimate_list$neighbourhood_groupBrooklyn), 0.975)), color = "red") +
+  geom_vline(xintercept = exp(mean(estimate_list$neighbourhood_groupBrooklyn)), lty = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = exp(mean(estimate_list$neighbourhood_groupBrooklyn)), # Position along x-axis
+    y = 95, # Adjust based on the y-scale of your histogram
+    label = paste0("Mean: ", round(exp(mean(estimate_list$neighbourhood_groupBrooklyn)), 2)),
+    color = "red",
+    hjust = -0.2
+  ) +
+  ggtitle(
+    "BTSP Estimate of Relative Change in Multiplicative Effect",
+    subtitle = "Variable: Located in Brooklyn (Binary)"
+  ) +
+  xlab("Brooklyn")+
+  ylab("Count")
+
+ggplot() +
+  geom_histogram(aes(x = exp(estimate_list$neighbourhood_groupManhattan)), color = "white") +
+  geom_vline(xintercept = exp(quantile((estimate_list$neighbourhood_groupManhattan), 0.025)), color = "red") +
+  geom_vline(xintercept = exp(quantile((estimate_list$neighbourhood_groupManhattan), 0.975)), color = "red") +
+  geom_vline(xintercept = exp(mean(estimate_list$neighbourhood_groupManhattan)), lty = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = exp(mean(estimate_list$neighbourhood_groupManhattan)), # Position along x-axis
+    y = 95, # Adjust based on the y-scale of your histogram
+    label = paste0("Mean: ", round(exp(mean(estimate_list$neighbourhood_groupManhattan)), 2)),
+    color = "red",
+    hjust = -0.2
+  ) +
+  ggtitle(
+    "BTSP Estimate of Relative Change in Multiplicative Effect",
+    subtitle = "Variable: Located in Manhattan (Binary)"
+  ) +
+  xlab("Manhattan")+
+  ylab("Count")
+    
+ggplot() +
+  geom_histogram(aes(x = exp(estimate_list$shared)), color = "white") +
+  geom_vline(xintercept = exp(quantile((estimate_list$shared), 0.025)), color = "red") +
+  geom_vline(xintercept = exp(quantile((estimate_list$shared), 0.975)), color = "red") +
+  geom_vline(xintercept = exp(mean(estimate_list$shared)), lty = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = exp(mean(estimate_list$shared)), # Position along x-axis
+    y = 95, # Adjust based on the y-scale of your histogram
+    label = paste0("Mean: ", round(exp(mean(estimate_list$shared)), 2)),
+    color = "red",
+    hjust = -0.2
+  ) +
+  ggtitle(
+    "BTSP Estimate of Relative Change in Multiplicative Effect",
+    subtitle = "Variable: Room Type = Shared (Binary)"
+  ) +
+  xlab("Shared")+
+  ylab("Count")
+
+ggplot() +
+  geom_histogram(aes(x = exp(estimate_list$private)), color = "white") +
+  geom_vline(xintercept = exp(quantile((estimate_list$private), 0.025)), color = "red") +
+  geom_vline(xintercept = exp(quantile((estimate_list$private), 0.975)), color = "red") +
+  geom_vline(xintercept = exp(mean(estimate_list$private)), lty = "dashed", color = "red") +
+  annotate(
+    "text",
+    x = exp(mean(estimate_list$private)), # Position along x-axis
+    y = 95, # Adjust based on the y-scale of your histogram
+    label = paste0("Mean: ", round(exp(mean(estimate_list$private)), 2)),
+    color = "red",
+    hjust = -0.2
+  ) +
+  ggtitle(
+    "BTSP Estimate of Relative Change in Multiplicative Effect",
+    subtitle = "Variable: Room Type = Private (Binary)"
+  ) +
+  xlab("Private")+
+  ylab("Count")
+```
+
+
+
+
+!BRONX IS REF GROUP!
+- dropped "Entire" from 2023 and 2024 model
+  - Not significant for either (so can basically assume 3 levels to room type????)
+  
+Double check whether availability 365 is worth including
+
+Bootstrap results
+
+Show best model, talk about all the other models I tried
 
