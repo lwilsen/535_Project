@@ -382,6 +382,11 @@ summary(model_4_pre)
 for (i in c(1:5)){
   plot(model_4_pre, which = i)
 }
+
+plot(model_4_post, which = 2)
+title("Post LL18 Model")
+plot(model_4_pre, which = 2)
+title("Pre LL18 Model")
 ```
 
 ```{r}
@@ -510,7 +515,7 @@ list(
      )
 ```
 
-
+## Relative change
 ```{r}
 #clean post bootstrap
 n = nrow(clean_post)
@@ -569,46 +574,65 @@ for (m in 1:M) {
   estimate_list$shared[m] = (as.numeric(format(round(coef(post_mod), 4),
                                                   scientific = FALSE)[[13]]) - as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[13]]))
 }
+```
 
+### Histograms and CI's
+```{r}
 for (i in 1:length(estimate_list)){
   print(
     ggplot()+
-      geom_histogram(aes(x = estimate_list[[i]]), color = "white")+
-      geom_vline(xintercept = quantile(estimate_list[[i]], 0.025), color = "red")+
-      geom_vline(xintercept = quantile(estimate_list[[i]], 0.975), color = "red")+
+      geom_histogram(aes(x = exp(estimate_list[[i]])), color = "white")+
+      geom_vline(xintercept = exp(quantile(estimate_list[[i]], 0.025)), color = "red")+
+      geom_vline(xintercept = exp(quantile(estimate_list[[i]], 0.975)), color = "red")+
       ggtitle(names(estimate_list[i]))+
       xlab(names(estimate_list[i]))
     )
 }
 
-ggplot()+
-  geom_histogram(aes(x = estimate_list[[1]]))
+
+bootstrap_summary <- data.frame(
+  Variable = c("Intercept", "Min. Nights", "Num. Reviews", "Monthly Reviews", "Total Host Listings", "Coming Annual Avail.", "Brooklyn", "Manhattan", "Queens", "Staten Island", "Entire", "Private", "Shared"),
+  Mean_Estimate = sapply(estimate_list, mean),
+  CI_Lower = sapply(estimate_list, function(x) quantile(x, 0.025)),
+  CI_Upper = sapply(estimate_list, function(x) quantile(x, 0.975)),
+  exp_mean = exp(sapply(estimate_list, mean))
+)
+
+ggplot(bootstrap_summary, aes(x = Variable, y = exp(Mean_Estimate))) +
+    geom_point(color = "blue") + 
+    geom_errorbar(aes(
+        ymin = exp(CI_Lower),
+        ymax = exp(CI_Upper),
+        color = ifelse(CI_Lower <= 0 & CI_Upper >= 0, "red", "green")
+    ), width = 0.2) +
+    ggtitle(paste("Relative change Bootstrap Confidence Intervals for", names(real_estimate_list)[i])) +
+    xlab("Variable") +
+    ylab("Mean Estimate with 95% CI") +
+    scale_color_identity()  +  # Use the colors directly without a legend
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
 ```
 Practically significant: Min nights, # reviews, reviews per month, neighborhood = Brooklyn, neighborhood = Manhattan, room type = private, room type = shared
 - These variables had estimated differences that were not equal to 0 at a 95% confidence level
 
+### Data Aggregation
 ```{r}
 coef_change_sum = data.frame(variable = names(estimate_list),
            relative_change = numeric(length(names(estimate_list))),
-           Bootstrapped_CI_L = numeric(length(names(estimate_list))),
-           Bootstrapped_CI_U = numeric(length(names(estimate_list))),
-           reject_null = character(length(names(estimate_list))))
+           rel_Bootstrapped_CI_L = numeric(length(names(estimate_list))),
+           rel_Bootstrapped_CI_U = numeric(length(names(estimate_list))),
+           reject_rel_null = character(length(names(estimate_list))),
+           pct_change = numeric(length(names(estimate_list))))
 
 for (i in 1:length(estimate_list)){
-  cat("Variable:",names(estimate_list)[i], 
-      "\n", 
-      exp(mean(estimate_list[[i]])), "times relative change in the multiplicative effect of variable on price", "\n",
-      "Bootstrapped estimate difference CI:", c(quantile(estimate_list[[i]], 0.025),
-                                                quantile(estimate_list[[i]], 0.975)), "\n",
-      ifelse((0 > quantile(estimate_list[[i]], 0.025)) & (0 < quantile(estimate_list[[i]], 0.975)), "Fail to Reject null", "Reject Null"),"\n",
-      "Post law coefficient estimate:", (coef(model_4_post)[i]), "\n",
-      "Pre law coefficient estimate:", (coef(model_4_pre)[i]), "\n")
   
   coef_change_sum$variable[i] = names(estimate_list)[i]
   coef_change_sum$relative_change[i] = exp(mean(estimate_list[[i]]))
-  coef_change_sum$Bootstrapped_CI_L[i] = quantile(estimate_list[[i]], 0.025)
-  coef_change_sum$Bootstrapped_CI_U[i] = quantile(estimate_list[[i]], 0.975)
-  coef_change_sum$reject_null[i] = ifelse((0 > quantile(estimate_list[[i]], 0.025)) & (0 < quantile(estimate_list[[i]], 0.975)), "Fail to Reject null", "Reject Null")
+  coef_change_sum$rel_Bootstrapped_CI_L[i] = exp(quantile(estimate_list[[i]], 0.025))
+  coef_change_sum$rel_Bootstrapped_CI_U[i] = exp(quantile(estimate_list[[i]], 0.975))
+  coef_change_sum$reject_rel_null[i] = ifelse((1 > exp(quantile(estimate_list[[i]], 0.025))) & (1 < exp(quantile(estimate_list[[i]], 0.975))), "Fail to Reject null", "Reject Null")
+  coef_change_sum$pct_change[i] = round((exp(mean(estimate_list[[i]])) - 1) * 100, 3)
 
 }
 ```
@@ -622,90 +646,211 @@ coef_change_sum
 
 
 
+## Real Change
+```{r}
+#clean post bootstrap
+n = nrow(clean_post)
+M = 1000
+real_estimate_list <- vector("list", length(names(coef(model_4_post))))
+names(real_estimate_list) = names(coef(model_4_post))
+for (i in 1:length(real_estimate_list)){
+  real_estimate_list[[i]] = numeric(M)
+}
+
+#Bootstraps difference in estimates for the two years
+for (m in 1:M) {
+  bootstrap_sample_idx_1 <- sample(n, replace = TRUE) 
+  bootstrap_sample_idx_2 = sample(n, replace = TRUE)
+  btsp_post <- clean_post[bootstrap_sample_idx_1, ]
+  btsp_pre = clean_pre[bootstrap_sample_idx_2, ]
+  
+  post_mod = glm(log(price) ~ ., data = btsp_post)
+  pre_mod = glm(log(price) ~ ., data = btsp_pre)
+  
+  real_estimate_list$`(Intercept)`[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[1]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[1]]))
+  
+  real_estimate_list$minimum_nights[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[2]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[2]]))
+  
+  real_estimate_list$number_of_reviews[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[3]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[3]]))
+  
+  real_estimate_list$reviews_per_month[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[4]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[4]]))
+  
+  real_estimate_list$calculated_host_listings_count[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[5]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[5]]))
+  
+  real_estimate_list$availability_365[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[6]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[6]]))
+  
+  real_estimate_list$neighbourhood_groupBrooklyn[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[7]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[7]]))
+  
+  real_estimate_list$neighbourhood_groupManhattan[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[8]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[8]]))
+  
+  real_estimate_list$neighbourhood_groupQueens[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[9]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[9]]))
+  
+  real_estimate_list$`neighbourhood_groupStaten Island`[m] = exp(as.numeric(format(round(coef(post_mod), 4),scientific = FALSE)[[10]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[10]]))
+  
+  real_estimate_list$entire[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[11]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[11]]))
+  
+  real_estimate_list$private[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[12]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[12]]))
+  
+  real_estimate_list$shared[m] = exp(as.numeric(format(round(coef(post_mod), 4),
+                                                  scientific = FALSE)[[13]])) - exp(as.numeric(format(round(coef(pre_mod), 4),scientific = FALSE)[[13]]))
+}
+```
+
+### Histograms and CI's
+```{r}
+for (i in 1:length(real_estimate_list)){
+  print(
+    ggplot()+
+      geom_histogram(aes(x = real_estimate_list[[i]]), color = "white")+
+      geom_vline(xintercept = quantile(real_estimate_list[[i]], 0.025), color = "red")+
+      geom_vline(xintercept = quantile(real_estimate_list[[i]], 0.975), color = "red")+
+      ggtitle(names(real_estimate_list[i]))+
+      xlab(names(real_estimate_list[i]))
+  )
+    
+}
+
+real_bootstrap_summary <- data.frame(
+  Variable = names(real_estimate_list),
+  Mean_Estimate = sapply(real_estimate_list, mean),
+  CI_Lower = sapply(real_estimate_list, function(x) quantile(x, 0.025)),
+  CI_Upper = sapply(real_estimate_list, function(x) quantile(x, 0.975)),
+  exp_mean = exp(sapply(real_estimate_list, mean))
+)
+
+ggplot(real_bootstrap_summary %>% filter(Variable != "(Intercept)"), 
+       aes(x = Variable, y = Mean_Estimate)) +
+    geom_point(color = "blue") + 
+    geom_errorbar(aes(
+        ymin = CI_Lower,
+        ymax = CI_Upper,
+        color = ifelse(CI_Lower <= 0 & CI_Upper >= 0, "red", "green")
+    ), width = 0.2) +
+    ggtitle(paste("Relative change Bootstrap Confidence Intervals for", names(real_estimate_list)[i])) +
+    xlab("Variable") +
+    ylab("Mean Estimate with 95% CI") +
+    scale_color_identity()  +  # Use the colors directly without a legend
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+### Data Aggregation
+```{r}
+coef_change_sum$real_change = numeric(length(names(estimate_list)))
+coef_change_sum$diff_Bootstrapped_CI_L = numeric(length(names(estimate_list)))
+coef_change_sum$diff_Bootstrapped_CI_U = numeric(length(names(estimate_list)))
+
+for (i in 1:length(estimate_list)){
+  coef_change_sum$real_change[i] = round(mean(real_estimate_list[[i]]),7)
+  coef_change_sum$diff_Bootstrapped_CI_L[i] = round(quantile(real_estimate_list[[i]], 0.025),7)
+  coef_change_sum$diff_Bootstrapped_CI_U[i] = quantile(real_estimate_list[[i]], 0.975)
+}
+```
+
+```{r}
+coef_change_sum %>% filter(reject_rel_null == "Reject Null") %>% # Statistically Significant
+  filter(abs(real_change) > 0.05)
+```
+
 ```{r}
 ggplot() +
-  geom_histogram(aes(x = exp(estimate_list$neighbourhood_groupBrooklyn)), color = "white") +
-  geom_vline(xintercept = exp(quantile((estimate_list$neighbourhood_groupBrooklyn), 0.025)), color = "red") +
-  geom_vline(xintercept = exp(quantile((estimate_list$neighbourhood_groupBrooklyn), 0.975)), color = "red") +
-  geom_vline(xintercept = exp(mean(estimate_list$neighbourhood_groupBrooklyn)), lty = "dashed", color = "red") +
+  geom_histogram(aes(x = (real_estimate_list$neighbourhood_groupBrooklyn)), color = "white") +
+  geom_vline(xintercept = (quantile((real_estimate_list$neighbourhood_groupBrooklyn), 0.025)), color = "red") +
+  geom_vline(xintercept =  (quantile((real_estimate_list$neighbourhood_groupBrooklyn), 0.975)), color = "red") +
+  geom_vline(xintercept =  (mean(real_estimate_list$neighbourhood_groupBrooklyn)), lty = "dashed", color = "red") +
   annotate(
     "text",
-    x = exp(mean(estimate_list$neighbourhood_groupBrooklyn)), # Position along x-axis
+    x =  (mean(real_estimate_list$neighbourhood_groupBrooklyn)), # Position along x-axis
     y = 95, # Adjust based on the y-scale of your histogram
-    label = paste0("Mean: ", round(exp(mean(estimate_list$neighbourhood_groupBrooklyn)), 2)),
+    label = paste0("Mean: ", round( (mean(real_estimate_list$neighbourhood_groupBrooklyn)), 3)),
     color = "red",
     hjust = -0.2
   ) +
   ggtitle(
-    "BTSP Estimate of Relative Change in Multiplicative Effect",
+    "BTSP Estimate of Real Change in Price Effect",
     subtitle = "Variable: Located in Brooklyn (Binary)"
   ) +
   xlab("Brooklyn")+
   ylab("Count")
 
 ggplot() +
-  geom_histogram(aes(x = exp(estimate_list$neighbourhood_groupManhattan)), color = "white") +
-  geom_vline(xintercept = exp(quantile((estimate_list$neighbourhood_groupManhattan), 0.025)), color = "red") +
-  geom_vline(xintercept = exp(quantile((estimate_list$neighbourhood_groupManhattan), 0.975)), color = "red") +
-  geom_vline(xintercept = exp(mean(estimate_list$neighbourhood_groupManhattan)), lty = "dashed", color = "red") +
+  geom_histogram(aes(x =  (real_estimate_list$neighbourhood_groupManhattan)), color = "white") +
+  geom_vline(xintercept =  (quantile((real_estimate_list$neighbourhood_groupManhattan), 0.025)), color = "red") +
+  geom_vline(xintercept =  (quantile((real_estimate_list$neighbourhood_groupManhattan), 0.975)), color = "red") +
+  geom_vline(xintercept =  (mean(real_estimate_list$neighbourhood_groupManhattan)), lty = "dashed", color = "red") +
   annotate(
     "text",
-    x = exp(mean(estimate_list$neighbourhood_groupManhattan)), # Position along x-axis
+    x =  (mean(real_estimate_list$neighbourhood_groupManhattan)), # Position along x-axis
     y = 95, # Adjust based on the y-scale of your histogram
-    label = paste0("Mean: ", round(exp(mean(estimate_list$neighbourhood_groupManhattan)), 2)),
+    label = paste0("Mean: ", round( (mean(real_estimate_list$neighbourhood_groupManhattan)), 3)),
     color = "red",
     hjust = -0.2
   ) +
   ggtitle(
-    "BTSP Estimate of Relative Change in Multiplicative Effect",
+    "BTSP Estimate of Real Change in Price Effect",
     subtitle = "Variable: Located in Manhattan (Binary)"
   ) +
   xlab("Manhattan")+
   ylab("Count")
     
 ggplot() +
-  geom_histogram(aes(x = exp(estimate_list$shared)), color = "white") +
-  geom_vline(xintercept = exp(quantile((estimate_list$shared), 0.025)), color = "red") +
-  geom_vline(xintercept = exp(quantile((estimate_list$shared), 0.975)), color = "red") +
-  geom_vline(xintercept = exp(mean(estimate_list$shared)), lty = "dashed", color = "red") +
+  geom_histogram(aes(x =  (real_estimate_list$shared)), color = "white") +
+  geom_vline(xintercept =  (quantile((real_estimate_list$shared), 0.025)), color = "red") +
+  geom_vline(xintercept =  (quantile((real_estimate_list$shared), 0.975)), color = "red") +
+  geom_vline(xintercept =  (mean(real_estimate_list$shared)), lty = "dashed", color = "red") +
   annotate(
     "text",
-    x = exp(mean(estimate_list$shared)), # Position along x-axis
+    x =  (mean(real_estimate_list$shared)), # Position along x-axis
     y = 95, # Adjust based on the y-scale of your histogram
-    label = paste0("Mean: ", round(exp(mean(estimate_list$shared)), 2)),
+    label = paste0("Mean: ", round( (mean(real_estimate_list$shared)), 3)),
     color = "red",
     hjust = -0.2
   ) +
   ggtitle(
-    "BTSP Estimate of Relative Change in Multiplicative Effect",
+    "BTSP Estimate of Real Change in Price Effect",
     subtitle = "Variable: Room Type = Shared (Binary)"
   ) +
   xlab("Shared")+
   ylab("Count")
 
 ggplot() +
-  geom_histogram(aes(x = exp(estimate_list$private)), color = "white") +
-  geom_vline(xintercept = exp(quantile((estimate_list$private), 0.025)), color = "red") +
-  geom_vline(xintercept = exp(quantile((estimate_list$private), 0.975)), color = "red") +
-  geom_vline(xintercept = exp(mean(estimate_list$private)), lty = "dashed", color = "red") +
+  geom_histogram(aes(x =  (real_estimate_list$private)), color = "white") +
+  geom_vline(xintercept =  (quantile((real_estimate_list$private), 0.025)), color = "red") +
+  geom_vline(xintercept =  (quantile((real_estimate_list$private), 0.975)), color = "red") +
+  geom_vline(xintercept =  (mean(real_estimate_list$private)), lty = "dashed", color = "red") +
   annotate(
     "text",
-    x = exp(mean(estimate_list$private)), # Position along x-axis
+    x =  (mean(real_estimate_list$private)), # Position along x-axis
     y = 95, # Adjust based on the y-scale of your histogram
-    label = paste0("Mean: ", round(exp(mean(estimate_list$private)), 2)),
+    label = paste0("Mean: ", round( (mean(real_estimate_list$private)), 3)),
     color = "red",
     hjust = -0.2
   ) +
   ggtitle(
-    "BTSP Estimate of Relative Change in Multiplicative Effect",
+    "BTSP Estimate of Real Change in Price Effect",
     subtitle = "Variable: Room Type = Private (Binary)"
   ) +
   xlab("Private")+
   ylab("Count")
 ```
 
+#Notes
 
-
+$$e^{(\beta_{i,Post} - \beta_{i,Pre})} = \frac{e^{\beta_{i,Post}}}{e^{\beta_{i,Pre}}} $$ Compares relative change in coefficient
+$e^{\beta_{Post}} - e^{\beta_{Pre}} $ Compares actual difference in coefficient (maybe more interpretable)
 
 !BRONX IS REF GROUP!
 - dropped "Entire" from 2023 and 2024 model
